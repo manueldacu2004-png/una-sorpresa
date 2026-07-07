@@ -542,11 +542,10 @@
   }
   function avviaCanzone(){
     canzone.muted = false;      // riattivo l'audio sbloccato da muto
-    canzone.currentTime = 0;
-    canzone.volume = 0;         // fade-in su desktop/Android; iOS parte a volume pieno
+    canzone.volume = 0.5;       // gia' udibile dal primo istante (iOS ignora e va pieno)
     canzone.play().catch(() => {});
-    // fade-in breve (~0,7s): evita solo lo "schiaffo" a volume pieno, ma si sente subito
-    let v = 0;
+    // salita rapida ~0,35s fino a regime: attacco immediato senza "schiaffo"
+    let v = 0.5;
     const fade = setInterval(() => {
       v = Math.min(v + 0.12, 0.85);
       canzone.volume = v;
@@ -573,9 +572,10 @@
   const cv = document.getElementById('fx');
   const ctx = cv.getContext('2d');
   let W, H, particelle = [], luci = [], modo = 'idle';
+  const DPR = Math.min(devicePixelRatio || 1, 2); // cap: su iPhone 3x il canvas costava 2,25x il necessario
   function resize(){
-    W = cv.width = innerWidth * devicePixelRatio;
-    H = cv.height = innerHeight * devicePixelRatio;
+    W = cv.width = innerWidth * DPR;
+    H = cv.height = innerHeight * DPR;
     cv.style.width = innerWidth+'px'; cv.style.height = innerHeight+'px';
   }
   addEventListener('resize', resize); resize();
@@ -583,7 +583,7 @@
   // cuori che salgono durante la carica: più % = più grandi, più veloci, più numerosi
   const COLORI_CUORI = ['#FF8FAE','#FFC178','#FFD9A0','#FF6B8F','#FFF1E0'];
   function nuovoCuore(intensita, x, y, burst){
-    const dpr = devicePixelRatio;
+    const dpr = DPR;
     particelle.push({
       x: x !== undefined ? x : Math.random()*W,
       y: y !== undefined ? y : H + 20,
@@ -613,8 +613,8 @@
   // esplosione di cuori dal pulsante ai traguardi (25/50/75%)
   function esplosione(intensita){
     const r = innesco.getBoundingClientRect();
-    const cx = (r.left + r.width/2) * devicePixelRatio;
-    const cy = (r.top + r.height/2) * devicePixelRatio;
+    const cx = (r.left + r.width/2) * DPR;
+    const cy = (r.top + r.height/2) * DPR;
     for(let i=0;i<16;i++) nuovoCuore(intensita, cx, cy, true);
   }
   // luci della folla (fase 2): puntini che tremolano in basso
@@ -625,7 +625,7 @@
       luci.push({
         x: Math.random()*W,
         y: H - Math.random()*H*0.28,
-        r: (0.4 + Math.random()*1.4) * devicePixelRatio,
+        r: (0.4 + Math.random()*1.4) * DPR,
         fase: Math.random()*Math.PI*2,
         vel: 0.5 + Math.random()*2
       });
@@ -642,14 +642,15 @@
     // cuori: partono già intorno al 10%, poi crescono fino alla tempesta
     if(modo === 'carica'){
       const int = carica/100;
-      if(int > 0.08 && Math.random() < 0.22 + int*1.0){
-        const n = 1 + Math.floor(int*4);
+      // tetto di 110 cuori vivi: oltre, su mobile il frame time esplode
+      if(int > 0.08 && particelle.length < 110 && Math.random() < 0.22 + int*0.7){
+        const n = 1 + Math.floor(int*3);
         for(let i=0;i<n;i++) nuovoCuore(int);
       }
     }
     particelle = particelle.filter(p => p.vita > 0 && p.y > -40);
     for(const p of particelle){
-      p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.vita -= 0.007;
+      p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.vita -= 0.009;
       disegnaCuore(p.x, p.y, p.s, p.rot, p.colore, p.vita * .9);
     }
 
@@ -667,7 +668,7 @@
   loop();
 
   /* ---------- meccanica di carica ---------- */
-  let carica = 0, premuto = false, finito = false, raf, traguardo = 0, ultimoT = null;
+  let carica = 0, premuto = false, finito = false, raf, traguardo = 0, ultimoT = null, ultimaIntensita = -1;
 
   function aggiorna(ts){
     if(finito) return;
@@ -681,8 +682,13 @@
 
     percento.textContent = Math.floor(carica) + '%';
     anello.style.strokeDashoffset = CIRC - (CIRC * carica / 100);
-    // il sole all'orizzonte e il glow del nucleo seguono la percentuale
-    body.style.setProperty('--intensita', (carica/100).toFixed(3));
+    // il sole e il glow seguono la percentuale, ma il repaint del filtro sulla
+    // foto full-screen e' caro su iOS: aggiorno solo a passi dell'1,5%
+    const intApprox = Math.round(carica/1.5)*0.015;
+    if(intApprox !== ultimaIntensita){
+      ultimaIntensita = intApprox;
+      body.style.setProperty('--intensita', intApprox.toFixed(3));
+    }
 
     body.classList.toggle('carica', premuto && carica > 0);
     body.classList.toggle('trema', !ridotto && premuto && carica > 65);
@@ -719,11 +725,13 @@
 
   function completa(){
     finito = true;
-    body.classList.remove('trema','carica');
+    // PRIMA di tutto: libero il canale audio e lancio la canzone,
+    // ogni ms di lavoro fatto prima ritarderebbe l'attacco dell'mp3
     clearTimeout(battitoTimer); battitoAttivo = false;
+    sessione.pause(); battitoEl.pause();
+    avviaCanzone();
+    body.classList.remove('trema','carica');
     if(actx) boato(); // colpo profondo sincronizzato col flash
-    sessione.pause(); battitoEl.pause(); // stop a silenzio e battito
-    avviaCanzone(); // la canzone parte subito, insieme al flash
     if(navigator.vibrate || hapticEl) vibra([30,80,30,80,60]);
     if(ridotto){
       body.classList.add('rivelato'); modo='folla'; creaLuci(); return;
