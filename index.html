@@ -318,9 +318,25 @@
   .firma{display:block;margin-top:16px;font-family:var(--script);font-size:34px;color:var(--acciaio)}
 
   @media (max-width:480px){
-    .biglietto{flex-direction:column}
-    .tallone{width:100%;border-left:none;border-top:1px dashed rgba(201,210,206,.35);padding:18px 0}
-    .barcode{transform:none}
+    /* fase 2 compatta: come su desktop, biglietto orizzontale e dedica visibile */
+    .scena{padding:24px 16px}
+    .pre-titolo{margin-bottom:14px;font-size:13px}
+    .firma-luche{font-size:clamp(50px,14vw,76px)}
+    .live2026{font-size:clamp(34px,9.5vw,50px)}
+    .sotto-lockup{margin-bottom:24px;font-size:12px}
+    .biglietto .corpo{padding:16px 16px}
+    .biglietto .titolo{font-size:15px}
+    .biglietto .sub{font-size:11.5px;margin-top:3px}
+    .biglietto .riga{gap:16px;margin-top:12px}
+    .etichetta{font-size:8.5px;margin-bottom:3px}
+    .valore{font-size:14px}
+    .tallone{width:56px;padding:8px 0}
+    .barcode i{height:30px}
+    .barcode i:nth-child(2n){height:24px}
+    .barcode i:nth-child(3n){height:33px}
+    .barcode i:nth-child(5n){height:27px}
+    .dedica{margin-top:20px;font-size:13px;line-height:1.65;max-width:42ch}
+    .firma{font-size:24px;margin-top:8px}
   }
   @media (prefers-reduced-motion:reduce){
     .pennacchio,.grana,.hint{animation:none}
@@ -489,12 +505,16 @@
     // (play muto + pausa immediata), così al 100% potrà partire da sola
     if(canzoneSbloccata) return;
     canzoneSbloccata = true;
-    canzone.volume = 0;
+    // iOS ignora .volume: uso .muted, che invece viene rispettato
+    canzone.muted = true;
     const p = canzone.play();
-    if(p) p.then(() => { canzone.pause(); canzone.currentTime = 0; }).catch(() => {});
+    if(p) p.then(() => { canzone.pause(); canzone.currentTime = 0; })
+          .catch(() => { canzoneSbloccata = false; }); // se fallisce, riprova al tocco dopo
   }
   function avviaCanzone(){
-    canzone.volume = 0;
+    canzone.muted = false;      // riattivo l'audio sbloccato da muto
+    canzone.currentTime = 0;
+    canzone.volume = 0;         // fade-in su desktop/Android; iOS parte a volume pieno
     canzone.play().catch(() => {});
     // fade-in breve (~0,7s): evita solo lo "schiaffo" a volume pieno, ma si sente subito
     let v = 0;
